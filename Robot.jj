@@ -1,0 +1,1424 @@
+options 
+{
+  
+	LOOKAHEAD=1; 
+	IGNORE_CASE=true;
+	STATIC = false;
+	
+}
+   
+
+PARSER_BEGIN(Robot)
+
+package uniandes.lym.robot.control;
+
+import uniandes.lym.robot.kernel.*;
+import uniandes.lym.robot.view.Console;
+ 
+import java.awt.Point;
+import java.util.HashMap;
+import java.util.Stack;
+import java.util.ArrayList;
+import java.util.Optional;
+
+public class Robot 
+{
+
+	private RobotWorldDec world;
+
+	private Console sistema = null;
+
+	private Stack<Scope> scopes = new Stack<>();
+
+	private StringBuilder codeInDefinition = new StringBuilder();
+
+	private int definitionCounter = 0;
+
+	private boolean canExecute = true;
+
+	private String salida = new String();
+
+	
+	public void setWorld(RobotWorld w) {
+		world = (RobotWorldDec) w;	
+	}
+
+	public void setScopes(Stack<Scope> scopes) {
+		this.scopes = scopes;
+	}
+
+	public void setSistema(Console sistema) {
+		this.sistema = sistema;
+	}
+
+	private boolean codeIsInDefinition() {
+	  return codeInDefinition.length() > 0;
+	}
+
+	private void registerToken(Token anyToken) {
+		if (codeIsInDefinition()) codeInDefinition.append(anyToken.image + " ");
+	}
+
+	private String getNameValue(String name) throws ParseException {
+	    Optional<String> definition = checkVariableDefinition(name);
+	    if (definition.isPresent()) {
+	      String[] definitionn = definition.get().split(" ");
+	      if (definitionn[0].equals("NAME")) {
+	      	return getNameValue(definitionn[1]);
+	      } else {
+	      	return definition.get();
+	      }
+	    } else {
+	      throw new ParseException("Value name not defined as a variable: " + name);
+	    }
+	}
+
+	private int getConstantValue(String constant) throws ParseException {
+		switch(constant.toLowerCase()) {
+			case "dim":
+				return world.getN();
+			case "myxpos":
+				return world.getPosition().x;
+			case "myypos":
+				return world.getPosition().y;
+			case "mychips":
+				return world.getMyChips();
+			case "myballoons":
+				return world.getMyBalloons();
+			case "balloonshere":
+				return world.countBalloons();
+			case "chipshere":
+				return world.chipsToPick();
+			case "spaces":
+				return world.freeSpacesForChips();
+			default:
+				throw new ParseException("Invalid constant value: " + constant);
+		}
+	}
+
+	private int getNumberValue(String number) {
+		return Integer.parseInt(number);
+	}
+
+	private int getAndCheckNumericValue(String value) throws ParseException {
+	  String[] sValue = value.split(" ");
+	  switch (sValue[0]) {
+	  	case "NUMBER":
+	  		return getNumberValue(sValue[1]);
+  		case "CONS":
+  			return getConstantValue(sValue[1]);
+		case "NAME":
+			return getAndCheckNumericValue(getNameValue(sValue[1]));
+		default:
+			throw new ParseException(
+			  String.format("the value %s must be a number%n", value));
+	  }
+	}
+
+	private String getAndCheckD2Direction(String pDirection) throws ParseException {
+		String[] sDirection = pDirection.split(" ");
+		if (sDirection.length == 1 && isD2Direction(sDirection[0])) {
+			return sDirection[0];
+		} else if (sDirection.length == 2 && sDirection[0].equals("NAME")) {
+		    String[] ssDirection = getNameValue(sDirection[1]).split(" ");
+		    if (ssDirection[0].equals("KEYWORD") && isD2Direction(ssDirection[1])) {
+		      return ssDirection[1];
+		    } else {
+		      throw new ParseException("Invalid D2 direction: " + pDirection);
+		    }
+		} else {
+		   throw new ParseException("Invalid D2 direction: " + pDirection);
+		}
+	}
+
+	private boolean isD2Direction(String pDirection) {
+	  pDirection = pDirection.toLowerCase();
+	  return (pDirection.equals("north") || pDirection.equals("south") ||
+	           pDirection.equals("east") || pDirection.equals("west"));
+	}
+
+	private String getAndCheckIObject(String pObject) throws ParseException {
+		String[] sObject = pObject.split(" ");
+		if (sObject.length == 1 && isIObject(sObject[0])) {
+			return sObject[0];
+		} else if (sObject.length == 2 && sObject[0].equals("NAME")) {
+		    String[] ssObject = getNameValue(sObject[1]).split(" ");
+		    if (ssObject[0].equals("KEYWORD") && isIObject(ssObject[1])) {
+		      return ssObject[1];
+		    } else {
+		      throw new ParseException("Invalid interactive object: " + pObject);
+		    }
+		} else {
+		   throw new ParseException("Invalid interactive object: " + pObject);
+		}
+	}
+
+	private boolean isIObject(String pObject) {
+	  pObject = pObject.toLowerCase();
+	  return (pObject.equals("chips") || pObject.equals("balloons"));
+	}
+
+	private String getAndCheckD1Direction(String pDirection)throws ParseException {
+	  String[] sDirection = pDirection.split(" ");
+		if (sDirection.length == 1 && isD1Direction(sDirection[0])) {
+			return sDirection[0];
+		} else if (sDirection.length == 2 && sDirection[0].equals("NAME")) {
+		    String[] ssDirection = getNameValue(sDirection[1]).split(" ");
+		    if (ssDirection[0].equals("KEYWORD") && isD1Direction(ssDirection[1])) {
+		      return ssDirection[1];
+		    } else {
+		      throw new ParseException("Invalid D1 direction: " + pDirection);
+		    }
+		} else {
+		   throw new ParseException("Invalid D1 direction: " + pDirection);
+		}
+	}
+
+	private boolean isD1Direction(String pDirection) {
+	  pDirection = pDirection.toLowerCase();
+	  return (pDirection.equals("left") || pDirection.equals("right")
+	  || pDirection.equals("around"));
+	}
+
+	private String getAndCheckD3Direction(String pDirection)throws ParseException {
+	  String[] sDirection = pDirection.split(" ");
+		if (sDirection.length == 1 && isD3Direction(sDirection[0])) {
+			return sDirection[0];
+		} else if (sDirection.length == 2 && sDirection[0].equals("NAME")) {
+		    String[] ssDirection = getNameValue(sDirection[1]).split(" ");
+		    if (ssDirection[0].equals("KEYWORD") && isD3Direction(ssDirection[1])) {
+		      return ssDirection[1];
+		    } else {
+		      throw new ParseException("Invalid D3 direction: " + pDirection);
+		    }
+		} else {
+		   throw new ParseException("Invalid D3 direction: " + pDirection);
+		}
+	}
+
+	private boolean isD3Direction(String pDirection) {
+	  pDirection = pDirection.toLowerCase();
+	  return (pDirection.equals("front") || pDirection.equals("right")
+	  || pDirection.equals("left") || pDirection.equals("back"));
+	}
+
+	private Optional<String> checkVariableDefinition(String variable) {
+        for (Scope scope : scopes) {
+            if (scope.variableIsDefined(variable)) {
+                return Optional.of(scope.getVariableValue(variable));
+            }
+        }
+        return Optional.empty();
+    }
+    
+    private boolean checkFunctionDefinition(String function, int numParams) {
+        for (Scope scope : scopes) {
+            if (scope.functionIsDefined(function, numParams)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private FunctionValue getFunctionDefinition(String function, int numParams) {
+        for (Scope scope : scopes) {
+            if (scope.functionIsDefined(function, numParams)) {
+                return scope.getFunctionValue(function, numParams);
+            }
+        }
+        return null;
+    }
+
+	private static class Scope {
+	    private final HashMap<String, String> variables = new HashMap<>();
+	    private final HashMap<String, FunctionValue> functions = new HashMap<>();
+
+	    public String toString() {
+	    	return String.format("[variables:%s functions:%s]%n", variables, functions);
+	    }
+	    
+	    public void defineVariable(String variable, String value)  {
+	        variables.put(variable.toLowerCase(), value);
+	    }
+	    
+	    public boolean variableIsDefined(String variable) {
+	        return variables.containsKey(variable.toLowerCase());
+	    }
+
+	    public String getVariableValue(String variable) {
+	        return variables.get(variable.toLowerCase());
+	    }
+	    
+	    public void defineFunction(String functionName, ArrayList<String> params, String code) {
+	      	if (code == null) {
+	      		functions.put(functionName.toLowerCase() + " " + params.size(), null);
+	      	} else {
+	      		functions.put(functionName.toLowerCase() + " " + params.size(), new FunctionValue(params, code));
+	      	}
+	    }
+	    
+	    public boolean functionIsDefined(String functionName, int numParams) {
+	        return functions.containsKey(functionName.toLowerCase() + " " + numParams);
+	    }
+
+	    public FunctionValue getFunctionValue(String functionName, int numParams) {
+	    	return functions.get(functionName.toLowerCase() + " " + numParams);
+	    }
+	}
+
+	private static class FunctionValue {
+		private ArrayList<String> params;
+		private String code;
+		public FunctionValue(ArrayList<String> params, String code) {
+			this.params = params;
+			this.code = code;
+		}
+		public ArrayList<String> getParams() {
+			return params;
+		}
+		public String getCode() {
+			return code;
+		}
+		public String toString() {
+			return String.format("[params:%s code:%s]%n", params, code);
+		}
+	}
+}
+PARSER_END(Robot)
+
+SKIP:
+{
+	" "
+	|	"\r"
+	|	"\t"
+	| "\n"
+}
+
+TOKEN:
+{
+	  <DEF_VAR_KW: "defvar">
+	| <DEFUN_KW: "defun">
+	| <LEFT_KW: "left">
+	| <RIGHT_KW: "right">
+	| <AROUND_KW: "around">
+	| <NORTH_KW: "north">
+	| <SOUTH_KW: "south">
+	| <EAST_KW: "east">
+	| <WEST_KW: "west">
+	| <BALLOONS_KW: "balloons">
+	| <CHIPS_KW: "chips">
+	| <FRONT_KW: "front">
+	| <BACK_KW: "back">
+	| <IF_KW: "if">
+	| <LOOP_KW: "loop">
+	| <REPEAT_KW: "repeat">
+	| <FACING_KW: "facing?">
+	| <BLOCKED_KW: "blocked?">
+	| <CAN_PUT_KW: "can-put?">
+	| <CAN_PICK_KW: "can-pick?">
+	| <CAN_MOVE_KW: "can-move?">
+	| <IS_ZERO_KW: "isZero?">
+	| <NOT_KW: "not">
+	| <CONS: "Dim" | "myXpos" | "myYpos" | "myChips" | "myBalloons" | "balloonsHere" | "ChipsHere" | "Spaces">
+	| <LEFT_P: "(">
+	| <RIGHT_P: ")">
+	| <COLON: ":">
+	| <PICK_CMD: "pick">
+	| <PUT_CMD: "put">
+	| <MOVE_CMD: "move">
+	| <JUMP_CMD: "jump">
+	| <TURN_CMD: "turn">
+	| <FACE_CMD: "face">
+	| <RUN_DIRS_CMD: "run-dirs">
+	| <MOVE_DIR_CMD: "move-dir">
+	| <MOVE_FACE_CMD: "move-face">
+	| <NULL_CMD: "null">
+	| <ASSIGN_OP: "=">
+	| <NUMBER: (["1"-"9"](["0"-"9"])* | "0")>
+	| <NAME: (["_"] | ["a"-"z"])(["_"] | ["a"-"z"] | ["0"-"9"])*>
+}
+
+
+	// the program
+	boolean command(Console sistema):
+	{
+	  this.sistema = sistema;
+	  sistema.printOutput("\n");
+	}
+	{
+	    (Is(new ArrayList<>())
+		    {
+				return true;
+			}
+	    )
+	    | (<EOF>
+		    {
+				return false;
+			}
+	    )
+	}
+
+	// non-empty list of instructions, aka, a block
+	void Is(ArrayList<String[]> params) :
+	{
+	  scopes.push(new Scope());
+	  // variables can be shadowed
+	  for(String[] param : params) {
+	    assert scopes.peek() != null;
+	    scopes.peek().defineVariable(param[0], param[1]);
+	  }
+	}
+	{
+	    (I())+
+	    {
+	      scopes.pop();
+	    }
+	}
+
+	// instruction
+	void I() :
+	{
+	  Token anyToken;
+	}
+	{
+	     anyToken = <LEFT_P>
+	     {
+	       registerToken(anyToken);
+	     }
+	     (CMD() | CS() | FC() | Is(new ArrayList<>()))?
+	     anyToken = <RIGHT_P>
+	     {
+	       registerToken(anyToken);
+	     }
+	}
+
+	// command
+	void CMD() :
+	{
+	  Token anyToken;
+	  Token variable;
+	  String value;
+	  String direction;
+	  String object;
+	  ArrayList<String> directions;
+	}
+	{
+	  (
+	      (	        anyToken = <DEF_VAR_KW>
+	        {
+	          registerToken(anyToken);
+	        }
+	        variable = <NAME>
+	        {
+	          registerToken(variable);
+	        }
+	        value = V()
+	        {
+	          // variables can be shadowed
+              assert scopes.peek() != null;
+              scopes.peek().defineVariable(variable.image, value);
+              if (!codeIsInDefinition() && canExecute) {
+              	salida = String.format("Command: defvar %s %s%n", variable.image, value.split(" ")[1]);
+              }
+	        }
+	      )
+	    | (
+	        anyToken = <ASSIGN_OP>
+	        {
+	          registerToken(anyToken);
+	        }
+	        variable = <NAME>
+	        {
+	          registerToken(variable);
+	        }
+	        value = V()
+	        {
+	          Optional<String> definition = checkVariableDefinition(variable.image);
+	          if (!definition.isPresent()) {
+	            throw new ParseException(String.format("the variable %s is not defined in this or a higher scope%n", variable.image));
+	          }
+	          scopes.peek().defineVariable(variable.image, value);
+	          if (!codeIsInDefinition() && canExecute) {
+              	salida = String.format("Command: = %s %s%n", variable.image, value.split(" ")[1]);
+              }
+	        }
+	      )
+	    |
+	      anyToken = <MOVE_CMD>
+	      {
+	      	registerToken(anyToken);
+	      }
+	      value = NV()
+	      {
+	        if (!codeIsInDefinition() && canExecute) {
+	          int valuee = getAndCheckNumericValue(value);
+	          world.moveForward(valuee, false);
+	          salida = String.format("Command: move %d%n", valuee);
+	        }
+	      }
+	    |
+	      anyToken = <JUMP_CMD>
+	      {
+	      	registerToken(anyToken);
+	      }	
+	      value = NV()
+	      {
+	        if (!codeIsInDefinition() && canExecute) {
+	            int valuee = getAndCheckNumericValue(value);
+	            world.moveForward(valuee, true);
+	        	salida = String.format("Command: jump %d%n", valuee);
+	        }
+	      }
+	    |
+	      anyToken = <PUT_CMD>
+	      {
+	      	registerToken(anyToken);
+	      }
+	       [
+			    anyToken = <COLON>
+			    {
+			      registerToken(anyToken);
+			    }
+	       ]
+	      ( object = X() | object = VN() )
+	      value = NV()
+	      {
+	        if (!codeIsInDefinition() && canExecute) {
+	          int valuee = getAndCheckNumericValue(value);
+	          object = getAndCheckIObject(object).toLowerCase();
+	          switch(object) {
+	          	case "chips":
+	          		world.putChips(valuee);
+	          		break;
+          		case "balloons":
+          			world.putBalloons(valuee);
+          			break;
+	          }
+	          salida = String.format("Commnad: put %s %d%n", object, valuee);
+	        }
+	      }
+	    |
+	      anyToken = <PICK_CMD>
+	      {
+	      	registerToken(anyToken);
+	      }
+	      [
+	      	anyToken = <COLON>
+		    {
+		      registerToken(anyToken);
+		    }
+	      ]
+	      ( object = X() | object = VN() )
+	      value = NV()
+	      {
+	        if (!codeIsInDefinition() && canExecute) {
+	          int valuee = getAndCheckNumericValue(value);
+	          object = getAndCheckIObject(object).toLowerCase();
+	          switch(object) {
+	          	case "chips":
+	          		world.pickChips(valuee);
+	          		break;
+          		case "balloons":
+          			world.grabBalloons(valuee);
+          			break;
+	          }
+	          salida = String.format("Commnad: pick %s %d%n", object, valuee);
+	        }
+	      }
+	    |
+	      anyToken = <MOVE_DIR_CMD>
+	      {
+	      	registerToken(anyToken);
+	      }
+	      value = NV()
+	      [
+		    	anyToken = <COLON>
+			    {
+			      registerToken(anyToken);
+			    }
+	      ]
+	      ( direction = D3() | direction = VN() )
+	      {
+	        if (!codeIsInDefinition() && canExecute) {
+	        	int valuee = getAndCheckNumericValue(value);
+	        	direction = getAndCheckD3Direction(direction).toLowerCase();
+	        	int initialFacing = world.getFacing();
+	        	switch(direction) {
+	        	  case "front":
+        			// No rotation needed; move forward
+        			break;
+    			  case "right":
+    			  	world.turnRight();
+    			  	break;
+			  	  case "back":
+			  	    world.turnRight();
+	                world.turnRight();
+	                break;
+                  case "left":
+	                world.turnRight();
+	                world.turnRight();
+	                world.turnRight();
+	                break;
+	        	}
+	        	world.moveForward(valuee, false);
+	        	while (world.getFacing() != initialFacing) {
+		            world.turnRight();
+		        }
+	        	salida = String.format("Command: move-dir %d %s%n", valuee, direction);
+	        }
+	      }
+	    |
+	      anyToken = <RUN_DIRS_CMD>
+	      {
+	      	registerToken(anyToken);
+	      }
+	      directions = Ds()
+	      {
+	        if (!codeIsInDefinition() && canExecute) {
+	          	ArrayList<String> checkedDirections = new ArrayList<>();
+	          	int initialFacing = world.getFacing();
+	          	for (String directionn : directions) {
+	          		checkedDirections.add(getAndCheckD3Direction(directionn));
+	          	}
+	          	for (String directionn : checkedDirections) {
+		            switch (directionn.toLowerCase()) {
+		                case "front":
+		                    world.moveForward(1, false);
+		                    break;
+		                case "right":
+		                    world.turnRight();
+		                    world.moveForward(1, false);
+		                    world.turnRight();
+		                    world.turnRight();
+		                    world.turnRight();
+		                    break;
+		                case "left":
+		                    world.turnRight();
+		                    world.turnRight();
+		                    world.turnRight();
+		                    world.moveForward(1, false);
+		                    world.turnRight();
+		                    break;
+		                case "back":
+		                    world.turnRight();
+		                    world.turnRight();
+		                    world.moveForward(1, false);
+		                    world.turnRight();
+		                    world.turnRight();
+		                    break;
+                  	}
+		        }
+	          	while (world.getFacing() != initialFacing) {
+		            world.turnRight();
+		        }
+		        salida = String.format("Command: run-dirs %s %n", checkedDirections);
+	        }
+	      }
+	    |
+          anyToken = <MOVE_FACE_CMD>
+          {
+      	  registerToken(anyToken);
+          }
+          value = NV()
+          [
+      	    anyToken = <COLON>
+	        {
+	      	  registerToken(anyToken);
+	        }
+          ]
+          ( direction = D2() | direction = VN() )
+          {
+            if (!codeIsInDefinition() && canExecute) {
+              	direction = getAndCheckD2Direction(direction);
+              	int valuee = getAndCheckNumericValue(value);
+              	switch (direction.toLowerCase()) {
+		            case "north":
+		                while (!world.facingNorth()) {
+		                    world.turnRight();
+		                }
+		                break;
+		            case "south":
+		                while (!world.facingSouth()) {
+		                    world.turnRight();
+		                }
+		                break;
+		            case "east":
+		                while (!world.facingEast()) {
+		                    world.turnRight(); 
+		                }
+		                break;
+		            case "west":
+		                while (!world.facingWest()) {
+		                    world.turnRight();
+		                }
+		                break;
+		            default:
+		                throw new ParseException("Invalid D1 direction: " + direction);
+		        }
+		        world.moveForward(valuee, false);
+            	salida = String.format("Command: move-face %d %s%n", valuee, direction);
+            }
+          }
+	    |
+	      anyToken = <FACE_CMD>
+	      {
+	      registerToken(anyToken);
+	      }
+	      [
+		      anyToken = <COLON>
+			  {
+			     registerToken(anyToken);
+			  }
+	      ]
+	      ( direction = D2() | direction = VN() )
+	      {
+	        if (!codeIsInDefinition() && canExecute) {
+	            direction = getAndCheckD2Direction(direction);
+	          	int newFacing;
+	            switch (direction.toLowerCase()) {
+	            	case "north":
+	            		newFacing = 0;
+	            		break;
+            		case "east":
+            			newFacing = 1;
+            			break;
+        			case "south":
+        				newFacing = 2;
+        				break;
+					case "west":
+						newFacing = 3;
+						break;
+					default:
+						throw new ParseException("Invalid D2 direction: " + direction);
+	            }
+	            int currentFacing = world.getFacing();
+	            switch (currentFacing) {
+	            	case 1:
+	            		currentFacing = 2;
+	            		break;
+            		case 2:
+            			currentFacing = 1;
+	            		break;
+	            }
+	            while (currentFacing != newFacing) {
+			        world.turnRight();
+			        currentFacing = (currentFacing + 1) % 4; // Simplified, assumes NORTH=0, EAST=1, SOUTH=2, WEST=3
+			    }
+	        	salida = String.format( "Command: face %s%n", direction);
+	        }
+	      }
+	    |
+	      anyToken = <TURN_CMD>
+	      {
+	      	registerToken(anyToken);
+	      }
+	      [
+		    	anyToken = <COLON>
+			    {
+			      registerToken(anyToken);
+			    }
+	      ]
+	      ( direction = D1() | direction = VN() )
+	      {
+	      	if (!codeIsInDefinition() && canExecute) {
+	      	  direction = getAndCheckD1Direction(direction);
+	      	  switch (direction.toLowerCase()) {
+	      	    case "left":
+	      	    	world.turnRight();
+	      	    	world.turnRight();
+	      	    	world.turnRight();
+	      	    	break;
+      	    	case "right":
+      	    	    world.turnRight();
+	      	    	break;
+      	    	case "around":
+      	    		world.turnRight();
+	      	    	world.turnRight();
+	      	    	break;
+      	    	default:
+      	    		throw new ParseException("Invalid D1 direction: " + direction);
+	      	  }
+	      	  salida = "Command: turn\n";
+	      	  salida = String.format("Command: turn %s%n", direction);
+	      	}
+	      }
+	    |
+	      anyToken = <NULL_CMD>
+	      {
+	      	registerToken(anyToken);
+	      	if (!codeIsInDefinition() && canExecute) {
+	      	  salida = "Command: null\n";
+	      	}
+	      }
+	  )
+	  {
+	    if (!codeIsInDefinition() && canExecute) {
+	    	sistema.printOutput(salida);
+		    try {
+		      Thread.sleep(500);
+		    } catch (Exception e) {
+		      e.printStackTrace();
+		    }
+	    }
+	  }
+	}
+
+	// control structure
+	void CS() :
+	{
+	  Token anyToken;
+	  Boolean condition;
+	  Boolean canExecuteTemp;
+	  String sCondition = "#";
+	  String value;
+	}
+	{
+	      anyToken = <IF_KW>
+	      {
+	        registerToken(anyToken);
+	      }
+	      condition = COND()
+	      {
+	        canExecuteTemp = canExecute;
+	        if (canExecuteTemp) {
+	          canExecute = condition;
+	        }
+	        scopes.push(new Scope());
+	      }
+	      I()
+	      {
+	        scopes.pop();
+	      }
+	      [
+	      	{
+	      	  if (canExecuteTemp) {
+	      	    canExecute = !condition;
+	      	  }
+	      	  scopes.push(new Scope());
+	      	}
+	      	I()
+	      	{
+	      	  scopes.pop();
+	      	}
+	      ]
+	      {
+	        canExecute = canExecuteTemp;
+	      }
+	    |
+	      anyToken = <LOOP_KW>
+	      {
+	      	registerToken(anyToken);
+	      	boolean onlyCondInDefinition = !codeIsInDefinition();
+	      	if (onlyCondInDefinition) codeInDefinition.append(" ");
+	      }
+          COND()
+          {
+              if (onlyCondInDefinition) {
+                sCondition = codeInDefinition.toString();
+              	codeInDefinition.setLength(0);
+              }
+			  if (codeIsInDefinition()) {
+		      	definitionCounter++;
+		      } else {
+		        codeInDefinition.append(" ");
+		      }
+		      scopes.push(new Scope());
+          }
+          I()
+          {
+              scopes.pop();
+		      if (definitionCounter == 0) {
+		        String code = codeInDefinition.toString();
+		        codeInDefinition.setLength(0);
+		        if (canExecute) {
+			        Robot parser = new Robot(System.in);
+			        parser.ReInit(new java.io.StringReader(sCondition));
+			        parser.setScopes(scopes);
+			        parser.setWorld(world);
+			        parser.setSistema(sistema);
+					// the loop body is executed whenever the condition is true
+					while (parser.COND()) {
+					  parser.ReInit(new java.io.StringReader(code));
+					  scopes.push(new Scope());
+					  parser.I();
+					  scopes.pop();
+					  parser.ReInit(new java.io.StringReader(sCondition));
+					}       
+			    }
+		      } else {
+		        definitionCounter--;
+		      }
+	      }
+	    |
+	      anyToken = <REPEAT_KW>
+	      {
+	        registerToken(anyToken);
+	      }
+	       value = NV()
+	       {
+			  if (codeIsInDefinition()) {
+		      	definitionCounter++;
+		      } else {
+		        codeInDefinition.append(" ");
+		      }
+		      scopes.push(new Scope());
+          }
+	      I()
+	      {
+              scopes.pop();
+		      if (definitionCounter == 0) {
+		        String code = codeInDefinition.toString();
+		        codeInDefinition.setLength(0);
+		        if (canExecute) {
+		          	int valuee = getAndCheckNumericValue(value);
+			        Robot parser = new Robot(System.in);
+			        parser.setScopes(scopes);
+			        parser.setWorld(world);
+			        parser.setSistema(sistema);
+			        parser.ReInit(new java.io.StringReader(code));
+					// the loop body is executed valuee times
+					for (int i = 0; i < valuee; i++) {
+					  scopes.push(new Scope());
+					  parser.I();
+					  scopes.pop();
+					  parser.ReInit(new java.io.StringReader(code));
+					}       
+			    }
+		      } else {
+		        definitionCounter--;
+		      }
+	      }
+	    |
+	      FD()
+	}
+	
+	// function call
+	void FC() :
+	{
+	  Token functionName;
+	  ArrayList<String> args = new ArrayList<>();
+	}
+	{
+	    functionName = <NAME>
+	    {
+	    	registerToken(functionName);
+	    }
+	    [args = Vs()]
+	    {
+	      boolean isAlreadyDefined = checkFunctionDefinition(functionName.image, args.size());
+	      if (!isAlreadyDefined) {
+	      	throw new ParseException(String.format("%s is not a function defined with %d parameters in this scope or in a higher scope", functionName.image, args.size()));
+	      }
+	      if (!codeIsInDefinition() && canExecute) {
+	        FunctionValue functionValue = getFunctionDefinition(functionName.image, args.size());
+	        ArrayList<String> params = functionValue.getParams();
+	        String code = functionValue.getCode();
+	        Robot parser = new Robot(System.in);
+	        parser.ReInit(new java.io.StringReader(code));
+	        parser.setScopes(scopes);
+	        parser.setWorld(world);
+	        parser.setSistema(sistema);
+	        scopes.push(new Scope());
+	        // variables can be shadowed
+			for (int i = 0; i < params.size(); i++) {
+			  assert scopes.peek() != null;
+			  scopes.peek().defineVariable(params.get(i), args.get(i));
+			}
+			// the function call is executed
+			parser.Is(new ArrayList<>());	       
+	        scopes.pop();
+	      }
+		}
+	}
+
+	// function definition 
+	void FD() :
+	{
+	  ArrayList<String[]> params = new ArrayList<>();
+	  ArrayList<String> paramss = new ArrayList<>();
+	  Token functionName;
+	  Token anyToken;
+	}
+	{
+	    anyToken = <DEFUN_KW>
+	    {
+	      registerToken(anyToken);
+	    }
+	    functionName = <NAME>
+	    {
+	      registerToken(functionName);
+	    }
+	    anyToken = <LEFT_P>
+	    {
+	      registerToken(anyToken);
+	    }
+	    [ params = PARAMS() ]
+		{
+		   boolean isAlreadyDefined = checkFunctionDefinition(functionName.image, params.size());
+		   if (isAlreadyDefined) {
+		  	 throw new ParseException(String.format("%s is already a defined function with %d parameters in this scope or in a higher scope%n", functionName.image, params.size()));
+		   }
+		   assert scopes.peek() != null;
+		   for (String[] param : params) {
+		  	 paramss.add(param[0]);
+		   }
+           scopes.peek().defineFunction(functionName.image, paramss, null);
+		}
+	    anyToken = <RIGHT_P>
+	    {
+	      registerToken(anyToken);
+	      if (codeIsInDefinition()) {
+	      	 definitionCounter++;
+	      } else {
+	         codeInDefinition.append(" ");
+	      }
+	    }
+	    Is(params)
+	    {
+	      if (definitionCounter == 0) {
+	      	assert scopes.peek() != null;
+	        scopes.peek().defineFunction(functionName.image, paramss, codeInDefinition.toString());
+	        codeInDefinition.setLength(0);
+	      } else {
+	        definitionCounter--;
+	      }
+	    }
+	}
+
+	// condition
+	boolean COND() :
+	{
+	  Token anyToken;
+	  String direction;
+	  boolean evaluation;
+	  String object;
+	  String value;
+	}
+	{
+	  anyToken = <LEFT_P>
+	  {
+	    registerToken(anyToken);
+	  }
+	  (
+	    	anyToken = <FACING_KW>
+	    	{
+		    	registerToken(anyToken);
+		    }
+	    	[
+	    		anyToken = <COLON>
+	    		{
+		    		registerToken(anyToken);
+		        }
+	    	]
+	    	( direction = D2() | direction = VN() )
+	    	{
+	    	  if (!codeIsInDefinition()) {
+	    	    direction = getAndCheckD2Direction(direction);
+	    	  } else {
+	    	    direction = "north";
+	    	  }
+	    	  switch(direction.toLowerCase()) {
+	    	  	case "north":
+	    	  		evaluation = world.facingNorth();
+	    	  		break;
+    	  		case "south":
+    	  			evaluation = world.facingSouth();
+    	  			break;
+	  			case "east":
+	  				evaluation = world.facingEast();
+	  				break;
+	  			case "west":
+	  				evaluation = world.facingWest();
+	  				break;
+	  			default:
+	  				throw new ParseException("Invalid D2 direction");
+	    	  }
+	    	}
+    	|
+    		anyToken = <CAN_MOVE_KW>
+    		{
+		    	registerToken(anyToken);
+		    }
+	    	[
+	    		anyToken = <COLON>
+	    		{
+		    		registerToken(anyToken);
+		        }
+	    	]
+	    	( direction = D2() | direction = VN() )
+	    	{
+	    	  Point nextPosition = new Point(world.getPosition());
+	    	  if (!codeIsInDefinition()) {
+	    	    direction = getAndCheckD2Direction(direction);
+	    	  } else {
+	    	    direction = "north";
+	    	  }
+	    	  switch(direction.toLowerCase()) {
+	    	  	case "north":
+	    	  		nextPosition.translate(0, -1);
+            		break;
+    	  		case "south":
+    	  			nextPosition.translate(0, 1);
+           			break;
+	  			case "east":
+	  				nextPosition.translate(1, 0);
+           			break;
+	  			case "west":
+	  				nextPosition.translate(-1, 0);
+            		break;
+	  			default:
+	  				throw new ParseException("Invalid D2 direction: " + direction);
+	    	  }
+	    	  // Check if next position is outside the board boundaries or blocked
+		      if (nextPosition.x < 1 || nextPosition.x > world.getN() || nextPosition.y < 1 || nextPosition.y > world.getN()) {
+		          evaluation = false;
+		      } else if (world.isBlocked(nextPosition)) {
+			      evaluation = false;
+			  } else {
+			      evaluation = true;
+			  }
+	    	}
+	    |
+	    	anyToken = <BLOCKED_KW>
+	        {
+		    	registerToken(anyToken);
+		    	Point nextPosition = new Point(world.getPosition());
+		    	switch (world.getFacing()) {
+			        case 0:
+			            nextPosition.translate(0, -1); // Move up
+			            break;
+			        case 1:
+			            nextPosition.translate(0, 1); // Move down
+			            break;
+			        case 2:
+			            nextPosition.translate(1, 0); // Move right
+			            break;
+			        case 3:
+			            nextPosition.translate(-1, 0); // Move left
+			            break;
+			        default:
+			        	throw new ParseException("Invalid D2 direction: " + world.getFacing());
+			    }
+			    // Check if the next position is outside the board boundaries or blocked
+			    if (nextPosition.x < 1 || nextPosition.x > world.getN() || nextPosition.y < 1 || nextPosition.y > world.getN()) {
+			        evaluation = true;
+			    } else if (world.isBlocked(nextPosition)) {
+			        evaluation = true;
+			    } else {
+			        evaluation = false;
+			    }
+		    }
+	    | 
+      		anyToken = <CAN_PUT_KW>
+      		{
+	    		registerToken(anyToken);
+	    	}
+	    	[
+			    anyToken = <COLON>
+			    {
+			      registerToken(anyToken);
+			    }
+	        ]
+      		( object = X() | object = VN() )
+      		value = NV()
+      		{
+      		  int valuee;
+      		  if (!codeIsInDefinition()) {
+      		    valuee = getAndCheckNumericValue(value);
+      		    object = getAndCheckIObject(object).toLowerCase();
+      		  } else {
+      		    valuee = 0;
+      		    object = "chips";
+      		  }
+      		  if ("chips".equals(object)) {
+      		    evaluation = world.getMyChips() >= valuee && world.freeSpacesForChips() >= valuee;
+      		  } else if ("balloons".equals(object)) {
+      		    evaluation = world.getMyBalloons() >= valuee;
+      		  } else {
+      		  	throw new ParseException("Invalid interactive object: " + object);
+      		  }
+      		}
+      		
+  		|
+      		anyToken = <CAN_PICK_KW>
+      		{
+	    		registerToken(anyToken);
+	    	}
+	    	[
+			    anyToken = <COLON>
+			    {
+			      registerToken(anyToken);
+			    }
+	        ]
+      		( object = X() | object = VN() )
+      		value = NV()
+      		{
+      		   int valuee;
+      		   if (!codeIsInDefinition()) {
+      		     valuee = getAndCheckNumericValue(value);
+      		     object = getAndCheckIObject(object).toLowerCase();
+      		   } else {
+      		     valuee = 0;
+      		     object = "chips";
+      		   }
+	  		   if ("chips".equals(object)) {
+  		    	evaluation = world.chipsToPick() >= valuee;
+	  		   } else if ("balloons".equals(object)) {
+  		    	evaluation = world.countBalloons() >= valuee;
+	  		   } else {
+  		  		throw new ParseException("Invalid interactive object: " + object);
+      		   }
+      		}
+  		|
+      		anyToken = <IS_ZERO_KW>
+      		{
+	    		registerToken(anyToken);
+	    	}
+	    	value = NV()
+	    	{
+	    	  int valuee;
+	    	  if (!codeIsInDefinition()) {
+	    	    valuee = getAndCheckNumericValue(value);
+	    	  } else {
+	    	    valuee = 0;
+	    	  }
+	    	  evaluation = valuee == 0;
+	    	}
+	    |   anyToken = <NOT_KW>
+	    	{
+		   		registerToken(anyToken);
+		    }
+	        evaluation = COND()
+	        {
+	          evaluation = !evaluation;
+	        }
+	  )
+	  anyToken = <RIGHT_P>
+	  {
+	  	registerToken(anyToken);
+	  	return evaluation;
+	  }
+	}
+	
+	
+	// function's non-empty space-separated parameter names list
+	ArrayList<String[]> PARAMS() :
+	{
+	  ArrayList<String[]> params = new ArrayList<>();
+	  Token param;
+	}
+	{
+	    (
+	      param = <NAME>
+	      {
+	        registerToken(param);
+	        for (String[] p : params) {
+		    	if (p[0].toLowerCase().equals(param.image.toLowerCase())) {
+		    		throw new ParseException(String.format("There cannot be two parameters with the same name in the definition of a function: %s%n", param.image));
+		    	}
+	        }
+	        String[] paramm = new String[2];
+	        paramm[0] = param.image;
+	        paramm[1] = "NAME";
+	        params.add(paramm);
+	      }
+	    )+
+	    {
+	      return params;
+	    }
+	}
+		
+	
+	// function's non-empty space-separated argument values list
+	ArrayList<String> Vs() : 
+	{
+	  ArrayList<String> args = new ArrayList<>();
+	  String value;
+	}
+	{
+	    (
+	      	value = V()
+	      	{
+	      	  args.add(value);
+	      	}
+	    )+
+	    {
+	      return args;
+	    }
+	}
+
+	// non-empty list of D3's directions
+	ArrayList<String> Ds() :
+	{
+	  ArrayList<String> ds = new ArrayList<>();
+	  String direction;
+	  Token anyToken;
+	}
+	{
+	    (
+	      [
+	    	anyToken = <COLON>
+		    {
+		      registerToken(anyToken);
+		    }
+	      ]
+	      ( direction = D3() | direction = VN() )
+	      { ds.add(direction); }
+	    )+ // it is necessary to check that VN is a D3 direction
+	    {
+	      return ds;
+	    }
+	}
+		
+
+	// first set of directions
+	String D1() :
+	{
+	  Token anyToken;
+	}
+	{
+	    ( anyToken = <LEFT_KW> | anyToken = <RIGHT_KW> | anyToken = <AROUND_KW> )
+	    {
+	      registerToken(anyToken);
+	      return anyToken.image;
+	    }
+	}
+
+	// second set of directions
+	String D2() :
+	{
+	  Token anyToken;
+	}
+	{
+	    (anyToken = <NORTH_KW> | anyToken = <SOUTH_KW> | anyToken = <EAST_KW> | anyToken = <WEST_KW>)
+	    {
+	      registerToken(anyToken);
+	      return anyToken.image;
+	    }
+	}
+
+	// third set of directions
+	String D3() :
+	{
+	  Token anyToken;
+	}
+	{
+	    ( anyToken = <FRONT_KW> | anyToken = <RIGHT_KW> | anyToken = <LEFT_KW> | anyToken = <BACK_KW> )
+	    {
+	      registerToken(anyToken);
+	      return anyToken.image;
+	    }
+	}
+		
+
+	// set of interactive objects
+	String X() :
+	{
+	  Token anyToken;
+	}
+	{
+	    ( anyToken = <BALLOONS_KW> | anyToken = <CHIPS_KW> )
+	    {
+	      registerToken(anyToken);
+	      return anyToken.image;
+	    }
+	}
+
+	// value
+	String V():
+	{
+	  String value;
+	}
+	{
+	  (value = VN() | value = C() | value = N() | value = KV())
+	  {
+	    return value;
+	  }
+	}
+
+	// numeric value
+	String NV():
+	{
+	  String value;
+	}
+	{
+	  ( value = N() | value = C() | value = VN() ) // VN may be or not a number
+	  {
+	    return value;
+	  }
+	}
+
+	// value name
+	// It is only valid if it is defined as a variable and ultimately has one of the other values associated with it
+	String VN():
+	{
+	  Token value;
+	}
+	{
+	    value = <NAME>
+	    {
+	      registerToken(value);
+	      Optional<String> definition = checkVariableDefinition(value.image);
+	      if (!definition.isPresent()) {
+	      		throw new ParseException(String.format("the variable/value %s is not defined in this or a higher scope%n", value.image));
+	      }
+	      return "NAME " + value.image;
+	    }
+	}
+
+	// number
+	String N():
+	{
+	  Token value;
+	}
+	{
+	  value = <NUMBER>
+	  {
+	      registerToken(value);
+	      try {
+		    int foo = Integer.parseInt(value.image);
+		  } catch (NumberFormatException e) {
+		    throw new Error(e);
+	      }
+	      return "NUMBER " + value.image;
+	  }
+	}
+		
+	// constant
+	String C():
+	{
+	  Token value;
+	}
+	{
+	    value = <CONS>
+	    {
+	      registerToken(value);
+	      return "CONS " + value.image;
+	    }
+	}
+
+	// keyword value
+	String KV() :
+	{
+	  Token value;
+	}
+	{
+	  ( value = <LEFT_KW>
+	  | value = <RIGHT_KW>
+	  | value = <AROUND_KW>
+	  | value = <NORTH_KW>
+	  | value = <SOUTH_KW>
+	  | value = <EAST_KW>
+	  | value = <WEST_KW>
+	  | value = <BALLOONS_KW>
+	  | value = <CHIPS_KW>
+	  | value = <FRONT_KW>
+	  | value = <BACK_KW>
+	  )
+	  {
+	    registerToken(value);
+	    return "KEYWORD " + value.image;
+	  }
+	}
+	
+	
